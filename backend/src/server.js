@@ -3,11 +3,18 @@ import 'dotenv/config'
 import express from 'express'
 import cors from 'cors'
 import { pool } from './db.js'
+import path from 'path'
+import fs from 'fs'
+import { fileURLToPath } from 'url'
 import { authRouter } from './routes/auth.routes.js'
 import { spacesRouter } from './routes/spaces.routes.js'
 import { ownerRouter } from './routes/owner.routes.js'
 import { bookingsRouter } from './routes/bookings.routes.js'
 import { syncCompletedBookings } from './services/booking-lifecycle.service.js'
+
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = path.dirname(__filename)
+const frontendDist = path.resolve(__dirname, '../../frontend/dist')
 
 const app = express()
 const PORT = Number(process.env.PORT || 5050)
@@ -22,9 +29,29 @@ app.use((req, res, next) => {
   next()
 })
 
+const configuredFrontend = process.env.FRONTEND_URL
 app.use(
   cors({
-    origin: process.env.FRONTEND_URL || 'http://localhost:5173',
+    origin: (origin, callback) => {
+      // Allow requests with no origin (e.g. mobile apps, curl, or same-origin requests)
+      if (!origin) return callback(null, true)
+
+      if (!configuredFrontend || configuredFrontend === '*' || origin === configuredFrontend) {
+        return callback(null, true)
+      }
+
+      const allowed = configuredFrontend.split(',').map((u) => u.trim())
+      if (
+        allowed.includes(origin) ||
+        allowed.includes('*') ||
+        process.env.NODE_ENV !== 'production'
+      ) {
+        return callback(null, true)
+      }
+
+      return callback(null, true)
+    },
+    credentials: true,
   })
 )
 
@@ -32,7 +59,20 @@ app.use(express.json({ limit: '1mb' }))
 
 // Root endpoint
 app.get('/', (req, res) => {
-  res.json({
+  if (req.headers.accept && req.headers.accept.includes('application/json')) {
+    return res.json({
+      application: 'ParkShare Cloud API',
+      message: 'Welcome to ParkShare Cloud',
+      health: '/health',
+      databaseHealth: '/api/db-health',
+    })
+  }
+
+  if (fs.existsSync(frontendDist)) {
+    return res.sendFile(path.join(frontendDist, 'index.html'))
+  }
+
+  return res.json({
     application: 'ParkShare Cloud API',
     message: 'Welcome to ParkShare Cloud',
     health: '/health',
@@ -77,7 +117,20 @@ app.use('/api/spaces', spacesRouter)
 app.use('/api/owner/spaces', ownerRouter)
 app.use('/api/bookings', bookingsRouter)
 
-// Handle unknown routes
+// Serve production static frontend if distribution folder exists
+if (fs.existsSync(frontendDist)) {
+  app.use(express.static(frontendDist))
+
+  // SPA fallback for all non-API GET paths (Express 5 compatible)
+  app.use((req, res, next) => {
+    if (req.method === 'GET' && !req.path.startsWith('/api') && req.path !== '/health') {
+      return res.sendFile(path.join(frontendDist, 'index.html'))
+    }
+    next()
+  })
+}
+
+// Handle unknown API routes
 app.use((req, res) => {
   res.status(404).json({
     error: 'Route not found',

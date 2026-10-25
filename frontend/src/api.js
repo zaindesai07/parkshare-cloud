@@ -3,10 +3,22 @@
  * Configurable via import.meta.env.VITE_API_URL, defaulting to http://localhost:5050/api
  */
 
+function getDefaultApiUrl() {
+  if (typeof window !== 'undefined' && window.location) {
+    // In local development on Vite dev server (port 5173), default to local backend port 5050
+    if (window.location.port === '5173') {
+      return 'http://localhost:5050/api'
+    }
+    // In production or when served by reverse proxy / ALB / Nginx, route to host /api
+    return `${window.location.origin}/api`
+  }
+  return 'http://localhost:5050/api'
+}
+
 const rawBaseUrl =
   (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_API_URL) ||
   (typeof process !== 'undefined' && process.env && process.env.VITE_API_URL) ||
-  'http://localhost:5050/api'
+  getDefaultApiUrl()
 
 const API_BASE_URL = rawBaseUrl.replace(/\/$/, '')
 const SERVER_BASE_URL = API_BASE_URL.replace(/\/api$/, '')

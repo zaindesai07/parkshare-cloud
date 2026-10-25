@@ -11,7 +11,10 @@ export function isSnsConfigured() {
   }
   return Boolean(
     SNS_TOPIC_ARN &&
-    (process.env.AWS_ACCESS_KEY_ID || process.env.AWS_CONTAINER_CREDENTIALS_RELATIVE_URI)
+    (process.env.AWS_ACCESS_KEY_ID ||
+      process.env.AWS_CONTAINER_CREDENTIALS_RELATIVE_URI ||
+      process.env.AWS_IAM_ROLE === 'true' ||
+      process.env.NODE_ENV === 'production')
   )
 }
 

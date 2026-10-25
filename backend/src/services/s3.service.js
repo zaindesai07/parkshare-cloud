@@ -12,9 +12,15 @@ const ALLOWED_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp', 'avif']
 let s3Client = null
 
 export function isS3Configured() {
+  if (process.env.NODE_ENV === 'test') {
+    return false
+  }
   return Boolean(
     S3_BUCKET &&
-    (process.env.AWS_ACCESS_KEY_ID || process.env.AWS_CONTAINER_CREDENTIALS_RELATIVE_URI)
+    (process.env.AWS_ACCESS_KEY_ID ||
+      process.env.AWS_CONTAINER_CREDENTIALS_RELATIVE_URI ||
+      process.env.AWS_IAM_ROLE === 'true' ||
+      process.env.NODE_ENV === 'production')
   )
 }
 
