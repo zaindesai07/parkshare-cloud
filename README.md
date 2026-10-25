@@ -222,15 +222,54 @@ CREATE TABLE bookings (
 
 ---
 
-## ☁️ AWS Production Deployment Blueprint
+---
 
-For high-availability production deployment on AWS:
-1. **Networking**: Custom Amazon VPC with 2 Public Subnets (ALB, NAT) and 2 Private Subnets (EC2, RDS).
-2. **Compute**: Amazon EC2 instances managed by an Auto Scaling Group behind an Application Load Balancer (ALB).
-3. **Database**: Amazon RDS for PostgreSQL in private subnets with automated backups and `sslmode=require`.
-4. **Storage & Media**: Amazon S3 bucket with CORS configuration allowing presigned PUT requests from the frontend domain.
-5. **Secrets & Config**: AWS Systems Manager Parameter Store or AWS Secrets Manager storing `DATABASE_URL` and `JWT_SECRET`.
-6. **Monitoring**: Amazon CloudWatch log groups and metric alarms for HTTP 5xx rates and EC2 CPU utilization.
+## ☁️ Cloud & Production Deployment
+
+ParkShare Cloud is configured for seamless deployment across modern cloud platforms with zero lock-in:
+
+### Option 1: 1-Click Render Deployment (Recommended for Instant Public HTTPS)
+
+The repository includes a production [`render.yaml`](render.yaml) Blueprint that automatically provisions:
+* A high-performance Node.js Web Service (running Express + React 19 SPA)
+* A dedicated managed PostgreSQL database
+* Automatic SSL/TLS HTTPS certificates
+* Dynamic secret generation for `JWT_SECRET` and internal database wiring
+
+**Deploy Steps**:
+1. Fork or push to your GitHub account (`zaindesai07/parkshare-cloud`).
+2. Log in to [Render.com](https://render.com).
+3. Click **New +** -> **Blueprint**.
+4. Connect the `parkshare-cloud` repository.
+5. Render will detect `render.yaml` and provision both the Web Service and PostgreSQL database automatically.
+6. Your live public application is immediately available at `https://<your-service-name>.onrender.com`.
+
+### Option 2: Docker / Container Deployment
+
+A multi-stage [`Dockerfile`](Dockerfile) is included for containerized environments:
+
+```bash
+# Build the container
+docker build -t parkshare-cloud .
+
+# Run with your PostgreSQL connection string
+docker run -d -p 5050:5050 \
+  -e DATABASE_URL="postgres://user:password@host:5432/parkshare?sslmode=require" \
+  -e JWT_SECRET="your-secure-jwt-key" \
+  -e DB_SSL="true" \
+  --name parkshare \
+  parkshare-cloud
+```
+
+### Option 3: AWS Enterprise Cloud Architecture
+
+The repository includes a complete CloudFormation template [`deployment/cloudformation-template.yaml`](deployment/cloudformation-template.yaml):
+1. **Networking**: Custom Amazon VPC (`10.0.0.0/16`) with 2 Public Subnets and 2 Private Subnets.
+2. **Compute**: Amazon EC2 (`t3.micro`) running Node 22 LTS, PM2, and Nginx.
+3. **Load Balancing**: Application Load Balancer (ALB) across 2 Availability Zones.
+4. **Database**: Amazon RDS for PostgreSQL in private subnets with strict security groups.
+5. **Storage & Notifications**: Amazon S3 bucket for owner photo uploads and Amazon SNS for booking alerts.
+6. **IAM & Secrets**: Dedicated least-privilege IAM Role and AWS Systems Manager Parameter Store.
 
 ---
 

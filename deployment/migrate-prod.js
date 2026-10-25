@@ -4,38 +4,34 @@
  * - Uses CREATE TABLE IF NOT EXISTS / CREATE INDEX IF NOT EXISTS
  * - Never drops tables or deletes user records
  * - Does NOT seed demo data into production
+ * - Retries connection on container startup
  */
-import pg from 'pg'
 import fs from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
+import { pool } from '../backend/src/db.js'
 
-const { Pool } = pg
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
+
+async function connectWithRetry(maxRetries = 10, delayMs = 3000) {
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const client = await pool.connect()
+      return client
+    } catch (err) {
+      console.warn(`[DB Connection Attempt ${attempt}/${maxRetries}]: ${err.message}`)
+      if (attempt === maxRetries) throw err
+      await new Promise((resolve) => setTimeout(resolve, delayMs))
+    }
+  }
+}
 
 async function runProductionMigration() {
   console.log('--- Starting Safe Production Database Migration ---')
 
-  const connectionString = process.env.DATABASE_URL
-  const poolConfig = connectionString
-    ? {
-        connectionString,
-        ssl: process.env.DB_SSL === 'false' ? false : { rejectUnauthorized: false },
-      }
-    : {
-        host: process.env.DB_HOST || 'localhost',
-        port: Number(process.env.DB_PORT || 5432),
-        database: process.env.DB_NAME || 'parkshare',
-        user: process.env.DB_USER || 'postgres',
-        password: process.env.DB_PASSWORD,
-        ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false,
-      }
-
-  const pool = new Pool(poolConfig)
-
   try {
-    const client = await pool.connect()
+    const client = await connectWithRetry()
     console.log('✓ Successfully connected to PostgreSQL instance.')
 
     const schemaPath = path.resolve(__dirname, '../backend/schema.sql')
@@ -67,7 +63,9 @@ async function runProductionMigration() {
     process.exit(0)
   } catch (error) {
     console.error('❌ Migration failed:', error.message)
-    await pool.end()
+    try {
+      await pool.end()
+    } catch {}
     process.exit(1)
   }
 }

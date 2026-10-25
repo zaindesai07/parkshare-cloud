@@ -1,0 +1,26 @@
+{
+  "name": "parkshare-cloud",
+  "version": "1.0.0",
+  "description": "Cloud-Based Smart Parking Space Sharing and Reservation System",
+  "type": "module",
+  "scripts": {
+    "build": "npm --prefix backend install --omit=dev && npm --prefix frontend install && npm --prefix frontend run build",
+    "start": "node deployment/migrate-prod.js && node backend/src/server.js",
+    "server": "node backend/src/server.js",
+    "migrate": "node deployment/migrate-prod.js",
+    "test": "npm --prefix backend test && npm --prefix frontend test",
+    "test:backend": "npm --prefix backend test",
+    "test:frontend": "npm --prefix frontend test",
+    "lint": "npm --prefix frontend run lint"
+  },
+  "keywords": [
+    "parking",
+    "cloud",
+    "express",
+    "react",
+    "postgresql",
+    "vite"
+  ],
+  "author": "zaindesai07",
+  "license": "ISC"
+}
