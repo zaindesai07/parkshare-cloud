@@ -4,7 +4,7 @@
   "description": "Cloud-Based Smart Parking Space Sharing and Reservation System",
   "type": "module",
   "scripts": {
-    "build": "npm --prefix backend install --omit=dev && npm --prefix frontend install && npm --prefix frontend run build",
+    "build": "npm --prefix backend install --omit=dev && npm --prefix frontend install --include=dev && npm --prefix frontend run build",
     "start": "node deployment/migrate-prod.js && node backend/src/server.js",
     "server": "node backend/src/server.js",
     "migrate": "node deployment/migrate-prod.js",
