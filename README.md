@@ -1,13 +1,22 @@
 # ParkShare Cloud 🚗🅿️
 
+[![Live Website](https://img.shields.io/badge/Live%20Website-parkshare--cloud.onrender.com-success.svg?style=for-the-badge&logo=render)](https://parkshare-cloud.onrender.com)
+[![GitHub Repo](https://img.shields.io/badge/GitHub-zaindesai07%2Fparkshare--cloud-blue.svg?style=for-the-badge&logo=github)](https://github.com/zaindesai07/parkshare-cloud)
 [![Tests](https://img.shields.io/badge/tests-36%20passed-brightgreen.svg)]()
 [![React](https://img.shields.io/badge/React-19.3-blue.svg)]()
-[![Node.js](https://img.shields.io/badge/Node.js-25.x-green.svg)]()
 [![Express](https://img.shields.io/badge/Express-5.3-lightgrey.svg)]()
-[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-14%2B-blue.svg)]()
-[![AWS](https://img.shields.io/badge/AWS-S3%20%7C%20SNS%20%7C%20RDS-orange.svg)]()
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16%2B-blue.svg)]()
 
 > A modern, cloud-native smart parking reservation platform designed for urban hubs. Discover verified parking spots, book slots with transactional conflict-prevention locking, manage owner listings with AWS S3 photo uploads, and receive asynchronous AWS SNS alerts.
+
+**🌐 Live Public Website:** [https://parkshare-cloud.onrender.com](https://parkshare-cloud.onrender.com)  
+**🩺 Backend Health Check:** [https://parkshare-cloud.onrender.com/health](https://parkshare-cloud.onrender.com/health)  
+**🗄️ Database Health Check:** [https://parkshare-cloud.onrender.com/api/db-health](https://parkshare-cloud.onrender.com/api/db-health)  
+**📦 GitHub Repository:** [https://github.com/zaindesai07/parkshare-cloud](https://github.com/zaindesai07/parkshare-cloud)  
+
+### 👤 Demo Accounts (Instant Quick-Login)
+* **Demo Driver:** `driver@parkshare.com` / `Password123!`
+* **Demo Owner:** `owner@parkshare.com` / `Password123!`
 
 ---
 
