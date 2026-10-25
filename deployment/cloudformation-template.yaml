@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: 'ParkShare Cloud - Production Infrastructure Blueprint (VPC, ALB, EC2 ASG, RDS PostgreSQL, S3, SNS, SSM, CloudWatch)'
+Description: 'ParkShare Cloud - Production Infrastructure Blueprint (VPC, ALB, EC2, RDS PostgreSQL, S3, SNS, SSM, CloudWatch)'
 
 Parameters:
   EnvironmentName:
@@ -26,11 +26,12 @@ Parameters:
     Type: String
     NoEcho: true
     MinLength: 8
+    Default: ParkShare2026Secure!
     Description: Master password for RDS PostgreSQL
-  ExistingIamInstanceProfile:
-    Type: String
-    Default: LabInstanceProfile
-    Description: Name of pre-existing IAM Instance Profile (use LabInstanceProfile for AWS Academy)
+  LatestAmiId:
+    Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
+    Default: '/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64'
+    Description: Latest Amazon Linux 2023 AMI automatically resolved from AWS SSM
 
 Resources:
   # ----------------------------------------------------------------------------
@@ -137,7 +138,7 @@ Resources:
   AlbSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupDescription: Enable HTTP/HTTPS access to ALB
+      GroupDescription: Enable HTTP/HTTPS access to Application Load Balancer
       VpcId: !Ref VPC
       SecurityGroupIngress:
         - IpProtocol: tcp
@@ -155,7 +156,7 @@ Resources:
   Ec2SecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupDescription: Allow inbound traffic from ALB only
+      GroupDescription: Allow inbound HTTP from ALB and SSH/Admin
       VpcId: !Ref VPC
       SecurityGroupIngress:
         - IpProtocol: tcp
@@ -166,6 +167,10 @@ Resources:
           FromPort: 5050
           ToPort: 5050
           SourceSecurityGroupId: !Ref AlbSecurityGroup
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
       Tags:
         - Key: Name
           Value: !Sub '${EnvironmentName}-ec2-sg'
@@ -173,7 +178,7 @@ Resources:
   RdsSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupDescription: Allow PostgreSQL inbound from EC2 instances only
+      GroupDescription: Allow PostgreSQL inbound from EC2 application server only
       VpcId: !Ref VPC
       SecurityGroupIngress:
         - IpProtocol: tcp
@@ -191,6 +196,11 @@ Resources:
     Type: AWS::S3::Bucket
     Properties:
       BucketName: !Sub '${EnvironmentName}-photos-${AWS::AccountId}'
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
       CorsConfiguration:
         CorsRules:
           - AllowedHeaders: ['*']
@@ -236,7 +246,80 @@ Resources:
       DeletionProtection: false
 
   # ----------------------------------------------------------------------------
-  # 6. Application Load Balancer & Auto Scaling Group
+  # 6. IAM Role & Instance Profile for EC2 Application Server
+  # ----------------------------------------------------------------------------
+  EC2IAMRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${EnvironmentName}-ec2-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+      Policies:
+        - PolicyName: ParkShareAppPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:GetObject
+                  - s3:ListBucket
+                Resource:
+                  - !GetAtt ImagesBucket.Arn
+                  - !Sub '${ImagesBucket.Arn}/*'
+              - Effect: Allow
+                Action:
+                  - sns:Publish
+                Resource: !Ref NotificationsTopic
+              - Effect: Allow
+                Action:
+                  - ssm:GetParameter
+                  - ssm:GetParameters
+                Resource: !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/parkshare/*'
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                  - logs:DescribeLogStreams
+                Resource: !Sub '${ApiLogGroup.Arn}:*'
+
+  EC2InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      InstanceProfileName: !Sub '${EnvironmentName}-instance-profile'
+      Roles:
+        - !Ref EC2IAMRole
+
+  # ----------------------------------------------------------------------------
+  # 7. CloudWatch Logs & Monitoring
+  # ----------------------------------------------------------------------------
+  ApiLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/ec2/${EnvironmentName}'
+      RetentionInDays: 14
+
+  HighCpuAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Trigger alarm if EC2 CPU exceeds 80% for 5 minutes
+      MetricName: CPUUtilization
+      Namespace: AWS/EC2
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 80
+      ComparisonOperator: GreaterThanThreshold
+
+  # ----------------------------------------------------------------------------
+  # 8. Application Load Balancer
   # ----------------------------------------------------------------------------
   AppLoadBalancer:
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
@@ -261,6 +344,10 @@ Resources:
       HealthCheckTimeoutSeconds: 5
       HealthyThresholdCount: 2
       UnhealthyThresholdCount: 5
+      TargetType: instance
+      Targets:
+        - Id: !Ref AppServerInstance
+          Port: 80
 
   AlbHttpListener:
     Type: AWS::ElasticLoadBalancingV2::Listener
@@ -273,30 +360,112 @@ Resources:
           TargetGroupArn: !Ref AlbTargetGroup
 
   # ----------------------------------------------------------------------------
-  # 7. CloudWatch Logs & Monitoring
+  # 9. Amazon EC2 Application Host
   # ----------------------------------------------------------------------------
-  ApiLogGroup:
-    Type: AWS::Logs::LogGroup
+  AppServerInstance:
+    Type: AWS::EC2::Instance
+    DependsOn: PostgresDB
     Properties:
-      LogGroupName: !Sub '/aws/ec2/${EnvironmentName}'
-      RetentionInDays: 14
+      InstanceType: !Ref InstanceType
+      ImageId: !Ref LatestAmiId
+      IamInstanceProfile: !Ref EC2InstanceProfile
+      SubnetId: !Ref PublicSubnet1
+      SecurityGroupIds:
+        - !Ref Ec2SecurityGroup
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs:
+            VolumeSize: 20
+            VolumeType: gp3
+            DeleteOnTermination: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${EnvironmentName}-app-server'
+      UserData:
+        Fn::Base64: !Sub |
+          #!/usr/bin/env bash
+          exec > >(tee /var/log/user-data.log|logger -t user-data -s 2>/dev/console) 2>&1
+          echo "=== Provisioning ParkShare Cloud Host ==="
+          dnf update -y
+          dnf install -y git nginx nodejs npm
 
-  HighCpuAlarm:
-    Type: AWS::CloudWatch::Alarm
-    Properties:
-      AlarmDescription: Trigger alarm if EC2 CPU exceeds 80% for 5 minutes
-      MetricName: CPUUtilization
-      Namespace: AWS/EC2
-      Statistic: Average
-      Period: 300
-      EvaluationPeriods: 1
-      Threshold: 80
-      ComparisonOperator: GreaterThanThreshold
+          npm install -g pm2
+
+          APP_DIR="/var/www/parkshare-cloud"
+          mkdir -p "$APP_DIR"
+          git clone https://github.com/zaindesai07/parkshare-cloud.git "$APP_DIR"
+          chown -R ec2-user:ec2-user "$APP_DIR"
+          cd "$APP_DIR"
+
+          # Write environment variables
+          cat <<EOF > backend/.env
+          PORT=5050
+          HOST=0.0.0.0
+          NODE_ENV=production
+          JWT_SECRET=parkshare_jwt_production_secret_key_2026
+          DATABASE_URL=postgres://${DBMasterUsername}:${DBMasterPassword}@${PostgresDB.Endpoint.Address}:5432/parkshare
+          DB_SSL=true
+          AWS_REGION=${AWS::Region}
+          AWS_S3_BUCKET=${ImagesBucket}
+          AWS_SNS_TOPIC_ARN=${NotificationsTopic}
+          AWS_IAM_ROLE=true
+          EOF
+
+          # Build and run migrations
+          npm --prefix backend install --omit=dev
+          npm --prefix frontend install
+          npm --prefix frontend run build
+          node deployment/migrate-prod.js || true
+
+          # Configure Nginx reverse proxy
+          cat <<EOF > /etc/nginx/conf.d/parkshare.conf
+          server {
+              listen 80 default_server;
+              listen [::]:80 default_server;
+              server_name _;
+
+              root /var/www/parkshare-cloud/frontend/dist;
+              index index.html;
+
+              location = /health {
+                  proxy_pass http://127.0.0.1:5050/health;
+                  proxy_http_version 1.1;
+                  proxy_set_header Host \$host;
+                  proxy_set_header X-Real-IP \$remote_addr;
+              }
+
+              location /api/ {
+                  proxy_pass http://127.0.0.1:5050;
+                  proxy_http_version 1.1;
+                  proxy_set_header Host \$host;
+                  proxy_set_header X-Real-IP \$remote_addr;
+                  proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+                  proxy_set_header X-Forwarded-Proto \$scheme;
+              }
+
+              location / {
+                  try_files \$uri \$uri/ /index.html;
+              }
+          }
+          EOF
+
+          systemctl enable nginx
+          systemctl restart nginx
+
+          cd "$APP_DIR/backend"
+          pm2 start src/server.js --name "parkshare-api"
+          pm2 save
+          pm2 startup systemd -u root --hp /root
+
+          echo "=== ParkShare Cloud Initialization Complete ==="
 
 Outputs:
   AlbDNSName:
     Description: Public Load Balancer DNS Endpoint
     Value: !GetAtt AppLoadBalancer.DNSName
+  EC2PublicIP:
+    Description: Direct EC2 Public IPv4 Address
+    Value: !GetAtt AppServerInstance.PublicIp
   RdsEndpoint:
     Description: PostgreSQL RDS Endpoint
     Value: !GetAtt PostgresDB.Endpoint.Address
